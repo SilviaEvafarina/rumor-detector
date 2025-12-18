@@ -4,7 +4,7 @@ from PIL import Image
 from google import genai
 from google.genai import types
 import requests
-import time
+import re
 
 # --- 1. PAGE CONFIGURATION ---
 st.set_page_config(
@@ -18,10 +18,10 @@ st.set_page_config(
 st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; border: none; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; border: none; font-weight: bold; }
     .stButton>button:hover { background-color: #0056b3; }
-    .verdict-box { padding: 20px; border-radius: 10px; text-align: center; font-weight: bold; font-size: 24px; margin-bottom: 20px; }
-    .evidence-card { padding: 15px; border-radius: 8px; background-color: white; border-left: 5px solid #007bff; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .verdict-box { padding: 20px; border-radius: 10px; text-align: center; font-weight: bold; font-size: 24px; margin-bottom: 20px; border: 2px solid; }
+    .evidence-card { background-color: white; padding: 15px; border-radius: 10px; border-left: 5px solid #007bff; margin-bottom: 15px; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); }
     </style>
     """, unsafe_allow_html=True)
 
@@ -37,24 +37,29 @@ except KeyError:
 # --- 4. MODELING TECHNIQUE: STEP 1 - EVIDENCE RETRIEVAL ---
 @st.cache_data(show_spinner=False)
 def get_web_evidence(query):
-    """Retrieves evidence from Google Custom Search API."""
+    """Retrieves and cleans evidence from Google Custom Search API."""
     url = f"https://www.googleapis.com/customsearch/v1?key={GOOGLE_SEARCH_KEY}&cx={SEARCH_ENGINE_ID}&q={query}"
     try:
         res = requests.get(url, timeout=10).json()
         items = res.get('items', [])
         evidence_list = []
         for item in items[:5]:
+            # Clean snippet to make it readable (sentences)
+            raw_snippet = item.get('snippet', '').replace('\n', ' ').strip()
+            # Basic sentence splitting (limit to first 2 sentences for readability)
+            sentences = re.split(r'(?<=[.!?]) +', raw_snippet)
+            clean_snippet = " ".join(sentences[:2])
+            
             evidence_list.append({
                 "title": item.get('title'),
-                "snippet": item.get('snippet'),
+                "snippet": clean_snippet if clean_snippet else raw_snippet,
                 "link": item.get('link')
             })
         return evidence_list
-    except Exception as e:
-        st.error(f"Search API Error: {str(e)}")
+    except Exception:
         return []
 
-# --- 5. SIDEBAR: INTRO & MODEL SELECTION ---
+# --- 5. SIDEBAR: DOCTOR INTRO & SETTINGS ---
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/2785/2785482.png", width=100)
     st.title("About Med-Verify")
@@ -68,9 +73,10 @@ with st.sidebar:
     )
     
     st.info("""
-    **Modeling Technique:**
-    1. **Retrieval:** Uses Google Search to find clinical evidence.
-    2. **Reasoning:** Uses Gemini to synthesize search data with image analysis.
+    **Our Fact-Check Process:**
+    1. **Retrieval:** We query Google Search for the latest clinical evidence.
+    2. **Reasoning:** Gemini AI analyzes the search results and your image.
+    3. **Transparency:** If the AI is busy, we show you the raw search data.
     """)
     st.divider()
     st.caption("Developed for CRISP-DM Phase 6: Deployment")
@@ -90,12 +96,12 @@ with st.form("inference_form"):
 
     submit_btn = st.form_submit_button("🚀 Run Verification")
 
-# --- 7. EXECUTION & GRACEFUL FALLBACK ---
+# --- 7. EXECUTION ---
 if submit_btn:
     if not (claim_text and uploaded_file):
         st.warning("⚠️ Please provide both a claim and an image.")
     else:
-        # STEP 1: RETRIEVAL (Search Engine)
+        # STEP 1: RETRIEVAL
         with st.status("🔍 Step 1: Retrieving Web Evidence...", expanded=True) as status:
             evidence_data = get_web_evidence(claim_text)
             
@@ -103,8 +109,9 @@ if submit_btn:
                 st.error("No evidence found. Please try a different claim.")
                 st.stop()
             
+            # Formulate text for AI input
             evidence_text = " ".join([e['snippet'] for e in evidence_data])
-            st.write(f"✅ Found {len(evidence_data)} relevant medical sources.")
+            st.write(f"✅ Found {len(evidence_data)} relevant sources.")
             
             # STEP 2: REASONING (Gemini)
             st.write(f"🧠 Step 2: Reasoning with {model_choice}...")
@@ -115,15 +122,12 @@ if submit_btn:
                 img_obj = Image.open(uploaded_file).convert('RGB')
                 
                 prompt = f"""
-                Analyze the following medical claim using the provided search evidence and image.
-                
+                Act as a professional medical fact-checker.
                 CLAIM: {claim_text}
-                SEARCH EVIDENCE: {evidence_text}
+                EVIDENCE: {evidence_text}
                 
-                TASK:
-                1. Cross-reference the claim with the evidence.
-                2. Evaluate if the image supports or contradicts the scientific consensus.
-                3. Return a JSON with: 'prediction' (Real/Fake), 'confidence' (0-100), and 'explanation'.
+                Compare the claim and image against the evidence. 
+                Return JSON with 'prediction' (Real/Fake), 'confidence' (0-100), and 'explanation'.
                 """
                 
                 response = client.models.generate_content(
@@ -131,7 +135,6 @@ if submit_btn:
                     contents=[prompt, img_obj],
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        # Safety override to prevent unnecessary blocks on medical debunking
                         safety_settings=[{"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"}],
                         response_schema={
                             "type": "object",
@@ -155,24 +158,24 @@ if submit_btn:
                     is_real = res.prediction.strip().lower() == "real"
                     bg_color = "#d4edda" if is_real else "#f8d7da"
                     txt_color = "#155724" if is_real else "#721c24"
-                    st.markdown(f'<div class="verdict-box" style="background-color: {bg_color}; color: {txt_color};">Verdict: {res.prediction.upper()}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="verdict-box" style="background-color: {bg_color}; color: {txt_color}; border-color: {txt_color};">Verdict: {res.prediction.upper()}</div>', unsafe_allow_html=True)
                     st.metric("Reasoning Confidence", f"{res.confidence}%")
                 with res_col2:
-                    st.subheader("Analysis Summary")
+                    st.subheader("Reasoning & Synthesis")
                     st.write(res.explanation)
 
             except Exception as e:
-                # --- GRACEFUL FALLBACK (If Gemini Fails) ---
-                status.update(label="⚠️ AI Quota Reached", state="error", expanded=False)
-                st.warning("The AI Reasoning engine is at capacity (Quota 429). Displaying retrieved evidence for manual review.")
+                # --- GRACEFUL FALLBACK (If Gemini Fails or Quota 429) ---
+                status.update(label="⚠️ AI Engine Busy", state="error", expanded=False)
+                st.warning("The AI Reasoning engine hit a quota limit. We've retrieved the raw evidence below for your review.")
                 
                 st.divider()
-                st.subheader("🔎 Raw Search Evidence")
-                for source in evidence_data:
+                st.subheader("🔎 Verified Medical Evidence (Raw Sources)")
+                
+                for i, source in enumerate(evidence_data):
                     st.markdown(f"""
                     <div class="evidence-card">
-                        <strong>{source['title']}</strong><br>
-                        <p>{source['snippet']}</p>
-                        <a href="{source['link']}" target="_blank">View Full Article</a>
+                        <p style="margin-bottom: 5px; color: #333;"><strong>Source {i+1}:</strong> {source['snippet']}</p>
+                        <a href="{source['link']}" target="_blank" style="color: #007bff; text-decoration: none; font-size: 14px;">🔗 Full Article: {source['title']}</a>
                     </div>
                     """, unsafe_allow_html=True)
