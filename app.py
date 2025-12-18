@@ -21,7 +21,7 @@ st.markdown("""
     .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
     .verdict-box { padding: 20px; border-radius: 10px; text-align: center; font-weight: bold; font-size: 24px; }
     </style>
-    """, unsafe_allow_value=True)
+    """, unsafe_allow_html=True)
 
 # --- 3. SECRETS LOADING ---
 try:
@@ -147,3 +147,4 @@ if submit_btn:
 # --- 8. FOOTER ---
 st.divider()
 st.caption("Note: This AI tool is for informational purposes and uses RAG to fetch live data. Always consult a doctor for medical advice.")
+
