@@ -113,7 +113,7 @@ if submit_btn:
             
             try:
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash", # Stable model
+                    model="gemini-2.5-flash-lite", # Stable model
                     contents=[prompt, img_obj],
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
@@ -158,3 +158,4 @@ if submit_btn:
 # --- 8. FOOTER ---
 st.divider()
 st.caption("Note: This tool is for educational purposes. Data is fetched via Google Custom Search API.")
+
