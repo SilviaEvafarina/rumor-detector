@@ -53,7 +53,7 @@ with st.sidebar:
     st.subheader("⚙️ Engine Settings")
     model_choice = st.selectbox(
         "Select AI Model:",
-        options=["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"],
+        options=["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash",  "gemini-3-flash", "gemini-3-pro-preview"],
         index=0,
         help="If you hit a 429 error, try switching to Flash-Lite (highest quota)."
     )
@@ -137,3 +137,4 @@ if submit_btn:
         with res_col2:
             st.subheader("AI Reasoning & Evidence")
             st.write(res.explanation)
+
