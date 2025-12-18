@@ -19,9 +19,9 @@ st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
     .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
-    .verdict-box { padding: 20px; border-radius: 10px; text-align: center; font-weight: bold; font-size: 24px; }
+    .verdict-box { padding: 20px; border-radius: 10px; text-align: center; font-weight: bold; font-size: 24px; margin-bottom: 20px; }
     </style>
-    """, unsafe_allow_html=True) # ✅ Corrected from unsafe_allow_value
+    """, unsafe_allow_html=True)
 
 # --- 3. SECRETS LOADING ---
 try:
@@ -49,24 +49,31 @@ with st.sidebar:
     st.title("About Med-Verify")
     st.info("""
     **What is a Medical Rumor?**
-    A medical rumor is an unverified claim regarding health. These spread fast, often using misleading images to gain trust.
+    A medical rumor is an unverified health claim. These spread quickly online, often using misleading images to build false trust.
     
-    **What can this Dashboard do?**
-    1. **Multimodal Analysis:** Analyzes text and image together.
-    2. **Agentic RAG:** Searches live web evidence.
-    3. **Evidence-Based Reasoning:** Provides a detailed 'Why'.
+    **Dashboard Capabilities:**
+    1. **Multimodal Analysis:** Checks text and image together.
+    2. **Agentic RAG:** Searches live Google Search data.
+    3. **Evidence Reasoning:** Uses Few-Shot logic to explain the verdict.
     """)
     st.divider()
     st.caption("Developed for CRISP-DM Phase 6: Deployment")
 
 # --- 6. MAIN USER INTERFACE ---
 st.title("🩺 Med-Verify AI: Agentic Fact-Checking")
-st.write("Ensuring medical transparency through Multimodal RAG.")
+st.write("Ensuring medical transparency through Multimodal Retrieval Augmented Generation.")
 
+# Form to batch inputs
 with st.form("inference_form"):
     col_input, col_img = st.columns([2, 1])
+    
     with col_input:
-        claim_text = st.text_area("Enter the Medical Claim:", height=150)
+        claim_text = st.text_area(
+            "Enter the Medical Claim:", 
+            placeholder="e.g., 'NIH confirms Vitamin D cures COVID-19...'",
+            height=150
+        )
+    
     with col_img:
         uploaded_file = st.file_uploader("Upload Claim Image", type=["jpg", "jpeg", "png"])
         if uploaded_file:
@@ -77,50 +84,68 @@ with st.form("inference_form"):
 # --- 7. EXECUTION & OUTPUT ---
 if submit_btn:
     if not (claim_text and uploaded_file):
-        st.warning("⚠️ Please provide both a text claim and an image.")
+        st.warning("⚠️ Please provide both a text claim and an image to proceed.")
     else:
         with st.status("🔍 Agentic RAG in Progress...", expanded=True) as status:
-            st.write("Step 1: Searching global medical databases...")
+            
+            # Step 1: Web Retrieval
+            st.write("Step 1: Searching global medical databases for evidence...")
             evidence = get_web_evidence(claim_text)
             
-            st.write("Step 2: Synthesizing facts with Gemini 2.0...")
+            # Step 2: Gemini Reasoning
+            st.write("Step 2: Synthesizing visual cues with search facts...")
             client = genai.Client(api_key=GEMINI_API_KEY)
             
-            # ✅ Fix: Ensure file is read from the start
+            # Fix: Reset file pointer to ensure image reads correctly
             uploaded_file.seek(0)
             img_obj = Image.open(uploaded_file).convert('RGB')
             
-            prompt = f"Claim: {claim_text}\nEvidence: {evidence}\nAnalyze if Real or Fake."
+            prompt = f"""
+            You are a professional medical fact-checking agent. Use evidence and image analysis.
             
-            response = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=[prompt, img_obj],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema={
-                        "type": "object",
-                        "properties": {
-                            "prediction": {"type": "string", "enum": ["Real", "Fake"]},
-                            "confidence": {"type": "integer"},
-                            "explanation": {"type": "string"}
-                        },
-                        "required": ["prediction", "confidence", "explanation"]
-                    }
+            Example REAL: Claim supported by NIH/WHO. Reasoning cites official sources.
+            Example FAKE: Claim contradicts consensus or image is manipulated/misleading.
+            
+            NOW ANALYZE:
+            Claim: {claim_text}
+            Evidence: {evidence}
+            """
+            
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash", # Stable model
+                    contents=[prompt, img_obj],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema={
+                            "type": "object",
+                            "properties": {
+                                "prediction": {"type": "string"},
+                                "confidence": {"type": "integer"},
+                                "explanation": {"type": "string"}
+                            },
+                            "required": ["prediction", "confidence", "explanation"]
+                        }
+                    )
                 )
-            )
-            res = response.parsed
-            status.update(label="✅ Analysis Complete!", state="complete", expanded=False)
+                res = response.parsed
+                status.update(label="✅ Analysis Complete!", state="complete", expanded=False)
+            except Exception as e:
+                st.error(f"AI Model Error: {str(e)}")
+                st.stop()
 
+        # Final Result Presentation
         st.divider()
         res_col1, res_col2 = st.columns([1, 2])
         
         with res_col1:
-            if res.prediction == "Real":
-                # ✅ Corrected unsafe_allow_html below
-                st.markdown(f'<div class="verdict-box" style="background-color: #d4edda; color: #155724; border: 2px solid #c3e6cb;">✅ {res.prediction}</div>', unsafe_allow_html=True)
+            # Flexible check for prediction result
+            is_real = res.prediction.strip().lower() == "real"
+            
+            if is_real:
+                st.markdown(f'<div class="verdict-box" style="background-color: #d4edda; color: #155724; border: 2px solid #c3e6cb;">✅ {res.prediction.upper()}</div>', unsafe_allow_html=True)
             else:
-                # ✅ Corrected unsafe_allow_html below
-                st.markdown(f'<div class="verdict-box" style="background-color: #f8d7da; color: #721c24; border: 2px solid #f5c6cb;">❌ {res.prediction}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="verdict-box" style="background-color: #f8d7da; color: #721c24; border: 2px solid #f5c6cb;">❌ {res.prediction.upper()}</div>', unsafe_allow_html=True)
             
             st.metric("Confidence Score", f"{res.confidence}%")
             
@@ -130,5 +155,6 @@ if submit_btn:
             with st.expander("View Raw Search Evidence"):
                 st.caption(evidence)
 
+# --- 8. FOOTER ---
 st.divider()
-st.caption("Note: This AI tool is for informational purposes only.")
+st.caption("Note: This tool is for educational purposes. Data is fetched via Google Custom Search API.")
