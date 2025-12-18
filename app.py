@@ -108,7 +108,7 @@ if submit_btn:
             """
             
             response = client.models.generate_content(
-                model="gemini-2.0-flash-exp",
+                model="gemini-2.0-flash",
                 contents=[prompt, img_obj],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -147,4 +147,5 @@ if submit_btn:
 # --- 8. FOOTER ---
 st.divider()
 st.caption("Note: This AI tool is for informational purposes and uses RAG to fetch live data. Always consult a doctor for medical advice.")
+
 
