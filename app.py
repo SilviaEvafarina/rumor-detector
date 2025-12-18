@@ -19,7 +19,7 @@ st.markdown("""
     <style>
     .main { background-color: #f5f7f9; }
     .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
-    .verdict-box { padding: 20px; border-radius: 10px; text-align: center; font-weight: bold; font-size: 24px; }
+    .verdict-box { padding: 20px; border-radius: 10px; text-align: center; font-weight: bold; font-size: 24px; margin-bottom: 20px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -43,28 +43,23 @@ def get_web_evidence(query):
     except:
         return "Could not retrieve live web evidence."
 
-# --- 5. SIDEBAR: DOCTOR INTRO & NEW MODEL SELECTION ---
+# --- 5. SIDEBAR: DOCTOR INTRO & MODEL SELECTION ---
 with st.sidebar:
-    # Your Doctor Icon / Intro
     st.image("https://cdn-icons-png.flaticon.com/512/2785/2785482.png", width=100)
     st.title("About Med-Verify")
     
-    # NEW: Model Selector integrated here
     st.subheader("⚙️ Engine Settings")
     model_choice = st.selectbox(
         "Select AI Model:",
-        options=["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash",  "gemini-3-flash", "gemini-3-pro-preview"],
+        options=["gemini-2.5-flash-lite", "gemini-3-flash", "gemini-3-pro-preview", "gemini-2.5-flash"],
         index=0,
         help="If you hit a 429 error, try switching to Flash-Lite (highest quota)."
     )
     
     st.info("""
-    **What is a Medical Rumor?**
-    A medical rumor is an unverified health claim. These spread quickly online, often using misleading images to build false trust.
-    
-    **Dashboard Capabilities:**
-    1. **Multimodal Analysis:** Checks text and image together.
-    2. **Agentic RAG:** Searches live Google Search data.
+    **Capabilities:**
+    1. **Multimodal Analysis:** Checks text and image.
+    2. **Agentic RAG:** Searches live Google data.
     3. **Evidence Reasoning:** Provides a detailed 'Why'.
     """)
     st.divider()
@@ -103,7 +98,7 @@ if submit_btn:
             
             try:
                 response = client.models.generate_content(
-                    model=model_choice, # Uses the dynamic selection
+                    model=model_choice,
                     contents=[prompt, img_obj],
                     config=types.GenerateContentConfig(
                         response_mime_type="application/json",
@@ -118,6 +113,12 @@ if submit_btn:
                         }
                     )
                 )
+                
+                # FIX: Defensive check to prevent AttributeErrors if parsing fails
+                if response.parsed is None:
+                    st.error("AI could not generate a valid verdict. It may have been blocked by safety filters.")
+                    st.stop()
+                    
                 res = response.parsed
                 status.update(label="✅ Analysis Complete!", state="complete", expanded=False)
             except Exception as e:
@@ -128,13 +129,17 @@ if submit_btn:
         st.divider()
         res_col1, res_col2 = st.columns([1, 2])
         with res_col1:
+            # FIX: Use res.prediction to decide formatting
             is_real = res.prediction.strip().lower() == "real"
+            
+            # FIX: Changed unsafe_allow_value to unsafe_allow_html
             if is_real:
                 st.markdown(f'<div class="verdict-box" style="background-color: #d4edda; color: #155724;">✅ {res.prediction.upper()}</div>', unsafe_allow_html=True)
             else:
                 st.markdown(f'<div class="verdict-box" style="background-color: #f8d7da; color: #721c24;">❌ {res.prediction.upper()}</div>', unsafe_allow_html=True)
+            
             st.metric("Confidence", f"{res.confidence}%")
+            
         with res_col2:
             st.subheader("AI Reasoning & Evidence")
             st.write(res.explanation)
-
